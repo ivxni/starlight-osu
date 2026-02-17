@@ -69,9 +69,10 @@ float Relax::SampleHitOffset()
     return dist(m_rng);
 }
 
-float Relax::SampleHoldTime(bool isStream)
+float Relax::SampleHoldTime(bool isStream, bool useKey2)
 {
     float mean = isStream ? holdMeanStream : holdMeanSingle;
+    if (useKey2) mean *= holdMeanK2Factor;
     if (mean < 10.0f) mean = 10.0f;
 
     double vf = static_cast<double>(holdVariance);
@@ -83,8 +84,8 @@ float Relax::SampleHoldTime(bool isStream)
     std::lognormal_distribution<double> dist(mu, sigma);
     float hold = static_cast<float>(dist(m_rng));
 
-    hold = (std::max)(hold, 10.0f);
-    hold = (std::min)(hold, 250.0f);
+    hold = (std::max)(hold, 15.0f);
+    hold = (std::min)(hold, 120.0f);
     return hold;
 }
 
@@ -190,6 +191,12 @@ void Relax::Update(const OsuSnapshot& snap)
         return;
     }
 
+    /* Stop tapping when dead (HP = 0) */
+    if (snap.playerHP <= 0.01f) {
+        if (m_keyDown) ReleaseKey();
+        return;
+    }
+
     int32_t now = snap.audioTime;
 
     /* Detect map restart (audio jumped backward >300 ms) */
@@ -212,10 +219,10 @@ void Relax::Update(const OsuSnapshot& snap)
         m_effectiveOffset = hitOffsetMean;
 
         printf("[*] Relax: key1='%s' key2='%s' UR=%.0f offset=%.1f "
-               "holdS=%.0f holdJ=%.0f var=%.2f "
+               "holdS=%.0f holdJ=%.0f K2f=%.2f var=%.2f "
                "slRel=%.0f+/-%.0f singleTap=%.0fms tgtAcc=%.1f%%\n",
                key1, key2, unstableRate, hitOffsetMean,
-               holdMeanStream, holdMeanSingle, holdVariance,
+               holdMeanStream, holdMeanSingle, holdMeanK2Factor, holdVariance,
                sliderReleaseMean, sliderReleaseStd,
                singletapThresholdMs, targetAccuracy);
         fflush(stdout);
@@ -271,9 +278,7 @@ void Relax::Update(const OsuSnapshot& snap)
         /* Sample hit offset (Gaussian) + stream catch-up when late */
         float hitOffset = SampleHitOffset() + globalOffsetMs;
         hitOffset += m_streamCatchUp;
-
-        /* Decay catch-up: in streams decay slowly, else reset fast */
-        m_streamCatchUp *= (isStream ? 0.75f : 0.3f);
+        m_streamCatchUp *= (isStream ? 0.8f : 0.2f);
         m_lastWasStream = isStream;
         m_lastHitOffset = hitOffset;
         m_pressTime = next.time + static_cast<int32_t>(hitOffset);
@@ -296,7 +301,7 @@ void Relax::Update(const OsuSnapshot& snap)
         } else if (next.isSpinner && next.endTime > next.time) {
             m_releaseTime = next.endTime;
         } else {
-            float holdTime = SampleHoldTime(isStream);
+            float holdTime = SampleHoldTime(isStream, m_useRightKey);
             m_releaseTime = m_pressTime + static_cast<int32_t>(holdTime);
         }
 
@@ -336,12 +341,15 @@ void Relax::Update(const OsuSnapshot& snap)
 
     /* ============================================================== */
     case ClickState::Pending: {
-        /* Check skip first (too late) - don't press, catch up next */
+        /* If we waited too long, skip - but ghost tap so replay looks legit */
         if (now > m_pressTime + static_cast<int32_t>(lateWindow)) {
             if (m_lastWasStream) {
                 float lateMs = static_cast<float>(now - m_pressTime);
-                m_streamCatchUp = -(std::min)(lateMs * 0.4f, 20.0f);
+                m_streamCatchUp = -(std::min)(lateMs * 0.3f, 12.0f);
             }
+            /* Ghost tap: press+release so miss looks like we tried */
+            PressKey();
+            ReleaseKey();
             m_state = ClickState::Idle;
             m_stateTransitions++;
         }
@@ -349,8 +357,7 @@ void Relax::Update(const OsuSnapshot& snap)
             /* Catch-up: if we pressed late in a stream, hit earlier next time */
             if (m_lastWasStream && now > m_pressTime) {
                 float lateMs = static_cast<float>(now - m_pressTime);
-                float correction = (std::min)(lateMs * 0.5f, 15.0f);
-                m_streamCatchUp = -correction;
+                m_streamCatchUp = -(std::min)(lateMs * 0.35f, 10.0f);
             }
             PressKey();
             m_state = ClickState::Holding;

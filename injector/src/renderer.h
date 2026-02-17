@@ -20,7 +20,7 @@ public:
                 const Relax& relax, const AimAssist& aimAssist);
 
     /* Settings */
-    bool showStatus    = false;   /* game state / audio time HUD (disabled) */
+    bool showStatus    = true;    /* game state / audio time HUD */
     bool showHitInfo   = true;    /* next hit object info */
     bool showPlayfield = false;   /* visualize hit objects on overlay */
 

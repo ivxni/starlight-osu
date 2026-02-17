@@ -45,9 +45,10 @@ public:
     float unstableRate         = 80.0f;   // tight rhythm for speed player
     float hitOffsetMean        = -2.0f;
 
-    float holdMeanStream       = 30.0f;   // fast enough for 300 BPM streams
-    float holdMeanSingle       = 65.0f;
-    float holdVariance         = 0.20f;
+    float holdMeanStream       = 58.0f;   // legit: ~60-70ms (look-ahead caps for fast BPM)
+    float holdMeanSingle       = 72.0f;   // legit singletap: ~76ms
+    float holdMeanK2Factor     = 0.88f;   // Key2 holds ~12% shorter (legit: 67 vs 76)
+    float holdVariance         = 0.28f;   // broader peak, more human
 
     float sliderReleaseMean    = 18.0f;
     float sliderReleaseStd     = 8.0f;
@@ -88,7 +89,7 @@ private:
     std::mt19937 m_rng;
 
     float SampleHitOffset();
-    float SampleHoldTime(bool isStream);
+    float SampleHoldTime(bool isStream, bool useKey2);
     float SampleSliderRelease();
 
     void PressKey();

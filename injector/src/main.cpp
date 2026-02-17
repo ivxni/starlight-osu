@@ -5,13 +5,12 @@
  * Reuses the same driver infrastructure as starlight-sys (Valorant).
  *
  * Features:
- *   - Relax (auto-click via Arduino HID)
- *   - Aim Assist (cursor correction via Arduino HID)
- *   - Debug overlay (optional)
+ *   - Relax (auto-click via de-elevated input helper)
+ *   - Aim Assist (cursor correction)
  *
  * Usage:
  *   slhost.exe                         - Interactive mode
- *   slhost.exe --overlay               - Overlay mode (auto-detect osu!)
+ *   slhost.exe --overlay               - Headless RX mode (auto-detect osu!)
  *   slhost.exe --scan                  - List processes
  *   slhost.exe --preload               - Load driver, wait, then run
  *   slhost.exe --unload                - Unload driver and exit
@@ -23,23 +22,24 @@
  */
 
 #include <Windows.h>
+#include <mmsystem.h>
+#pragma comment(lib, "winmm.lib")
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <string>
+#include <thread>
+#include <atomic>
 #include "byovd.h"
 #include "physmem.h"
 #include "kernel.h"
 #include "../../shared/driver_backend.h"
-#include "overlay.h"
 #include "sig_scanner.h"
 #include "osu_reader.h"
-#include "renderer.h"
 #include "relax.h"
 #include "aim_assist.h"
 #include "config.h"
 #include "kernel_input.h"
-#include "imgui.h"
 #include <cmath>
 
 /* ------------------------------------------------------------------ */
@@ -541,6 +541,9 @@ int wmain(int argc, wchar_t* argv[])
             return RunInputHelper();
     }
 
+    /* Ensure high timer resolution globally */
+    timeBeginPeriod(1);
+
     printf("[*] starlight-osu init\n");
     fflush(stdout);
 
@@ -548,6 +551,7 @@ int wmain(int argc, wchar_t* argv[])
 
     if (!IsAdmin()) {
         ERR("[!] Administrator privileges required.\n");
+        timeEndPeriod(1);
         return 1;
     }
 
@@ -580,8 +584,11 @@ int wmain(int argc, wchar_t* argv[])
     if (!backend->SupportsMSR())
         g_cfg.skipMSR = true;
 
-    if (g_cfg.unload)
-        return DoUnload(serviceName);
+    if (g_cfg.unload) {
+        int ret = DoUnload(serviceName);
+        timeEndPeriod(1);
+        return ret;
+    }
 
     /* ---- Phase 0: PA Safety Filter ---- */
     PhysicalMemory phys(backend);
@@ -590,6 +597,7 @@ int wmain(int argc, wchar_t* argv[])
     LOG("[1/6] Loading PA safety filter...\n");
     if (!kernel.PreloadSafetyFilter()) {
         ERR("[!] Cannot load memory map.\n");
+        timeEndPeriod(1);
         return 1;
     }
 
@@ -606,6 +614,7 @@ int wmain(int argc, wchar_t* argv[])
 
             if (!byovd.LoadDriver(driverPath, serviceName)) {
                 ERR("[!] Driver load failed.\n");
+                timeEndPeriod(1);
                 return 1;
             }
             LOG("[+] Driver loaded.\n");
@@ -625,6 +634,7 @@ int wmain(int argc, wchar_t* argv[])
         if (!session) {
             ERR("[!] Cannot open device handle.\n");
             byovd.UnloadDriver();
+            timeEndPeriod(1);
             return 1;
         }
 
@@ -654,12 +664,14 @@ int wmain(int argc, wchar_t* argv[])
         if (!session) {
             ERR("[!] Cannot open device for kernel scan.\n");
             byovd.UnloadDriver();
+            timeEndPeriod(1);
             return 1;
         }
 
         if (!kernel.Initialize(g_cfg.skipMSR)) {
             ERR("[!] Kernel context init failed.\n");
             byovd.UnloadDriver();
+            timeEndPeriod(1);
             return 1;
         }
         LOG("[+] Kernel context ready.\n");
@@ -668,7 +680,7 @@ int wmain(int argc, wchar_t* argv[])
     /* ---- Phase 4: Action ---- */
 
     if (g_cfg.overlay) {
-        LOG("[5/6] Starting overlay mode...\n");
+        LOG("[5/6] Starting headless RX mode...\n");
         LOG("[*] Waiting for osu! to start...\n");
 
         /* Poll for osu! process */
@@ -701,22 +713,6 @@ int wmain(int argc, wchar_t* argv[])
             }
         }
 
-        /* Wait for osu! window */
-        LOG("[*] Waiting for osu! window...\n");
-        for (int w = 0; w < 15; w++) {
-            HWND hw = FindWindowW(nullptr, L"osu!");
-            if (hw) break;
-            Sleep(2000);
-        }
-
-        /* Create overlay */
-        Overlay overlay;
-        if (!overlay.Initialize(L"osu!")) {
-            ERR("[!] Overlay initialization failed.\n");
-            byovd.UnloadDriver();
-            return 1;
-        }
-
         /* Initialize input relay (de-elevated SendInput helper) */
         KernelInput kernelInput(phys);
         if (!kernelInput.Init()) {
@@ -730,31 +726,48 @@ int wmain(int argc, wchar_t* argv[])
         /* Create assist modules */
         Relax relax(kernelInput);
         AimAssist aimAssist;
-        OsuDebugRenderer renderer;
 
         ConfigLoad(&relax, &aimAssist);
         ConfigPollStart(&relax, &aimAssist);
 
-        /* Run overlay render loop */
-        overlay.Run([&]() {
-            OsuSnapshot snap = reader.GetSnapshot();
-
-            /* Update assists */
-            relax.Update(snap);
-            aimAssist.Update(snap, overlay.GetWidth(), overlay.GetHeight());
-
-            /* Render debug overlay */
-            renderer.Render(snap, overlay.GetWidth(), overlay.GetHeight(),
-                            relax, aimAssist);
-
-            GameStatePush(snap);
+        /* Start logic thread (1000Hz) -- headless, no overlay */
+        std::atomic<bool> logicRunning = true;
+        std::thread logicThread([&]() {
+            while (logicRunning) {
+                OsuSnapshot snap = reader.GetSnapshot();
+                if (snap.valid) {
+                    relax.Update(snap);
+                }
+                Sleep(1);
+            }
         });
 
+        LOG("[+] Relax running headless (1000Hz). Press ENTER to stop.\n");
+
+        /* Gamestate push loop (~5 Hz) until user presses Enter */
+        std::atomic<bool> waitDone = false;
+        std::thread inputThread([&]() {
+            getchar();
+            waitDone = true;
+        });
+
+        while (!waitDone) {
+            OsuSnapshot snap = reader.GetSnapshot();
+            GameStatePush(snap);
+            Sleep(200);
+        }
+
         /* Cleanup */
+        logicRunning = false;
+        if (logicThread.joinable())
+            logicThread.join();
+        if (inputThread.joinable())
+            inputThread.join();
+
         ConfigPollStop();
         ConfigSave(relax, aimAssist);
         reader.Stop();
-        LOG("[+] Overlay closed.\n");
+        LOG("[+] Stopped.\n");
     }
     else if (g_cfg.doScan) {
         LOG("[5/6] Listing processes...\n");
@@ -767,6 +780,7 @@ int wmain(int argc, wchar_t* argv[])
         if (!session) {
             ERR("[!] Device open failed\n");
             byovd.UnloadDriver();
+            timeEndPeriod(1);
             return 1;
         }
 
@@ -786,5 +800,6 @@ int wmain(int argc, wchar_t* argv[])
     byovd.UnloadDriver();
     LOG("[+] Done.\n");
 
+    timeEndPeriod(1);
     return 0;
 }

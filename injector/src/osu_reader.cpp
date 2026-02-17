@@ -370,8 +370,8 @@ void OsuReader::ReadLoop()
         debug.lastGameState.store(newSnap.gameState);
         debug.lastAudioTime.store(newSnap.audioTime);
 
-        /* Poll rate: faster when playing (2ms), slower in menus (50ms) */
-        Sleep(newSnap.isPlaying ? 2 : 50);
+        /* Poll rate: faster when playing (1ms), slower in menus (50ms) */
+        Sleep(newSnap.isPlaying ? 1 : 50);
     }
 
     printf("[+] OsuReader: thread stopped\n");

@@ -29,13 +29,14 @@ Controls when each note is tapped relative to its ideal time. Uses a normal dist
 
 ### Hold Time (Log-Normal Model)
 
-Controls how long each key is held. Uses a log-normal distribution which matches real keystroke dynamics (no negative values, natural right-skew tail). Defaults are tuned for 280-300 BPM stream capability.
+Controls how long each key is held. Uses a log-normal distribution which matches real keystroke dynamics (no negative values, natural right-skew tail). Defaults are tuned for legit replay analysis (Vojo-style: K1 ~76ms, K2 ~67ms).
 
 | Setting | Key | Type | Default | Description |
 |---|---|---|---|---|
-| **Hold Mean (Stream)** | `holdMeanStream` | float | `30.0` | Mean hold duration for notes in streams (gap < singletap threshold). 30ms handles 300 BPM (50ms gaps). Increase for lower BPM comfort. |
-| **Hold Mean (Single)** | `holdMeanSingle` | float | `65.0` | Mean hold duration for singles/jumps (gap >= singletap threshold). |
-| **Hold Variance** | `holdVariance` | float | `0.20` | Shape factor. 0.1 = very consistent, 0.5 = sloppy. 0.15-0.25 for speed players, 0.25-0.35 for casual. |
+| **Hold Mean (Stream)** | `holdMeanStream` | float | `58.0` | Mean hold duration for notes in streams (gap < singletap threshold). Legit players: 60-80ms. |
+| **Hold Mean (Single)** | `holdMeanSingle` | float | `72.0` | Mean hold duration for singles/jumps (gap >= singletap threshold). Legit: ~76ms. |
+| **Hold K2 Factor** | `holdMeanK2Factor` | float | `0.88` | Key2 holds are multiplied by this (0.88 = ~12% shorter). Legit: K2 ~67ms vs K1 ~76ms. |
+| **Hold Variance** | `holdVariance` | float | `0.28` | Shape factor. 0.1 = very consistent, 0.5 = sloppy. 0.25-0.35 for legit-looking peaks. |
 
 ### Slider Handling
 
@@ -63,7 +64,7 @@ Human players singletap slow sections and alternate only in streams. The thresho
 
 ### Tuning Guide
 
-- **Speed player profile (default)**: UR 80, offset -2, holdMeanStream 30, minClickGap 8, singletapThreshold 125, fatigue 1.5. Handles 280-300 BPM streams comfortably.
+- **Legit profile (default)**: UR 80, offset -2, holdMeanStream 58, holdMeanSingle 72, holdMeanK2Factor 0.88, holdVariance 0.28. Produces Vojo-style hold distributions (K1 ~76ms, K2 ~67ms).
 - **Casual player profile**: UR 100-120, offset -4, holdMeanStream 50, minClickGap 15, singletapThreshold 180, fatigue 3.0.
 - **Target 98% acc**: Set `targetAccuracy=98.0`. The controller will adjust UR/offset dynamically.
 - **BPM math**: At 300 BPM 1/4 streams, notes are 50ms apart. Minimum cycle = holdMeanStream + minClickGap. Keep this sum below the note gap.
@@ -170,9 +171,10 @@ key2=S
 targetAccuracy=0.0
 unstableRate=80.0
 hitOffsetMean=-2.0
-holdMeanStream=30.0
-holdMeanSingle=65.0
-holdVariance=0.20
+holdMeanStream=58.0
+holdMeanSingle=72.0
+holdMeanK2Factor=0.88
+holdVariance=0.28
 sliderReleaseMean=18.0
 sliderReleaseStd=8.0
 singletapThreshold=125.0

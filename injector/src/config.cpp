@@ -107,9 +107,10 @@ static void ApplyJson(const char* json, Relax* relax, AimAssist* aimAssist)
         relax->targetAccuracy      = JsonFloat(rxJson, "targetAccuracy",      0.0f);
         relax->unstableRate        = JsonFloat(rxJson, "unstableRate",        80.0f);
         relax->hitOffsetMean       = JsonFloat(rxJson, "hitOffsetMean",       -2.0f);
-        relax->holdMeanStream      = JsonFloat(rxJson, "holdMeanStream",      30.0f);
-        relax->holdMeanSingle      = JsonFloat(rxJson, "holdMeanSingle",      65.0f);
-        relax->holdVariance        = JsonFloat(rxJson, "holdVariance",        0.20f);
+        relax->holdMeanStream      = JsonFloat(rxJson, "holdMeanStream",      58.0f);
+        relax->holdMeanSingle      = JsonFloat(rxJson, "holdMeanSingle",      72.0f);
+        relax->holdMeanK2Factor    = JsonFloat(rxJson, "holdMeanK2Factor",    0.88f);
+        relax->holdVariance        = JsonFloat(rxJson, "holdVariance",        0.28f);
         relax->sliderReleaseMean   = JsonFloat(rxJson, "sliderReleaseMean",   18.0f);
         relax->sliderReleaseStd    = JsonFloat(rxJson, "sliderReleaseStd",    8.0f);
         relax->singletapThresholdMs= JsonFloat(rxJson, "singletapThreshold",  125.0f);
@@ -507,9 +508,10 @@ void ConfigLoad(Relax* relax, AimAssist* aimAssist)
                 if (strcmp(key, "targetAccuracy") == 0)     relax->targetAccuracy       = ParseFloat(val, 0.0f);
                 if (strcmp(key, "unstableRate") == 0)       relax->unstableRate         = ParseFloat(val, 100.0f);
                 if (strcmp(key, "hitOffsetMean") == 0)      relax->hitOffsetMean        = ParseFloat(val, -3.0f);
-                if (strcmp(key, "holdMeanStream") == 0)     relax->holdMeanStream       = ParseFloat(val, 45.0f);
-                if (strcmp(key, "holdMeanSingle") == 0)     relax->holdMeanSingle       = ParseFloat(val, 75.0f);
-                if (strcmp(key, "holdVariance") == 0)       relax->holdVariance         = ParseFloat(val, 0.25f);
+                if (strcmp(key, "holdMeanStream") == 0)     relax->holdMeanStream       = ParseFloat(val, 58.0f);
+                if (strcmp(key, "holdMeanSingle") == 0)     relax->holdMeanSingle       = ParseFloat(val, 72.0f);
+                if (strcmp(key, "holdMeanK2Factor") == 0)   relax->holdMeanK2Factor     = ParseFloat(val, 0.88f);
+                if (strcmp(key, "holdVariance") == 0)       relax->holdVariance         = ParseFloat(val, 0.28f);
                 if (strcmp(key, "sliderReleaseMean") == 0)  relax->sliderReleaseMean    = ParseFloat(val, 20.0f);
                 if (strcmp(key, "sliderReleaseStd") == 0)   relax->sliderReleaseStd     = ParseFloat(val, 10.0f);
                 if (strcmp(key, "singletapThreshold") == 0) relax->singletapThresholdMs = ParseFloat(val, 180.0f);
@@ -571,6 +573,7 @@ void ConfigSave(const Relax& relax, const AimAssist& aimAssist)
     fprintf(f, "hitOffsetMean=%.1f\n",    relax.hitOffsetMean);
     fprintf(f, "holdMeanStream=%.1f\n",   relax.holdMeanStream);
     fprintf(f, "holdMeanSingle=%.1f\n",   relax.holdMeanSingle);
+    fprintf(f, "holdMeanK2Factor=%.2f\n", relax.holdMeanK2Factor);
     fprintf(f, "holdVariance=%.2f\n",     relax.holdVariance);
     fprintf(f, "sliderReleaseMean=%.1f\n",relax.sliderReleaseMean);
     fprintf(f, "sliderReleaseStd=%.1f\n", relax.sliderReleaseStd);
